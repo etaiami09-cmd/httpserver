@@ -560,7 +560,7 @@ struct HTTPResponse {
         #endif
     }
 
-    static HTTPResponse executeJson(const std::string& path) {
+    static HTTPResponse executeJSON(const std::string& path) {
         #ifdef HOT_RELOAD
         return HTTPResponse(HTTPStatusCode::Ok)
                 .addContentType(HTTPContentType::ApplicationJson)
