@@ -16,7 +16,7 @@ They can be accessed using their names or more explicit template syntax. Example
 Each ```RequestObject``` has some shared fields:
 * ```params``` is an optional hash map containing any URL parameters
 * ```path``` is a string containing the URL path of the request (i.e. ```"/home"```)
-* ```Host``` contains the host field of the request
+* ```host``` contains the host field of the request
 * ```cookies``` is an optional hash map containing any cookies passed with the request
 
 Additionally, a POST, PUT, or PATCH ```RequestObject``` contains the following fields:
