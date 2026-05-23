@@ -79,7 +79,7 @@ inline void setFailedSocketCallback(FailedSocketHandler socketHandler) {
 }
 
 inline void setFailedSetSockOptCallback(FailedSocketHandler setSockOptHandler) {
-    failedSetSockOpt = failedSetSockOpt;
+    failedSetSockOpt = setSockOptHandler;
 }
 
 inline void setFailedBindCallback(FailedBindHandler bindHandler) {
