@@ -236,9 +236,8 @@ inline HeaderValueType<HTTPHeader::Host> parseHost(const std::string& request) {
 inline PotentialHeader<HTTPHeader::Cookie> parseCookies(const std::string& request) {
     std::string_view parseView(request.begin(), request.begin() + request.find("\r\n\r\n") + sizeof("\r\n\r\n"));
     std::unordered_map<std::string, std::string> cookies;
-    size_t pviewsize = parseView.size();
-    size_t ssize = request.size();
     size_t cookiesStart = parseView.find("\r\nCookie: ");
+    if (cookiesStart == std::string::npos) return {};
     size_t cookiesEnd = parseView.find("\r\n", cookiesStart + 1);
     parseView = {parseView.begin() + cookiesStart + sizeof("\r\nCookie: "),
         parseView.begin() + cookiesEnd};
@@ -493,7 +492,7 @@ inline size_t getBodySize(ResponseBody body) {
 }
 
 #ifndef HOT_RELOAD
-std::unordered_map<std::string, std::string> fileCache;
+inline std::unordered_map<std::string, std::string> fileCache;
 #endif
 
 inline std::string loadFile(const std::string& path) {
@@ -548,7 +547,7 @@ struct HTTPResponse {
     static HTTPResponse renderHTML(const std::string& path) {
         #ifdef HOT_RELOAD
         return HTTPResponse(HTTPStatusCode::Ok)
-                .addContentType(HTTPContentType::TextPlain)
+                .addContentType(HTTPContentType::TextHtml)
                 .addBody(loadFile(path))
                 .closeConnection();
         #else
