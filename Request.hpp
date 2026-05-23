@@ -13,7 +13,6 @@ int sockfd;
 
 constexpr int PORT = 8080;
 constexpr int MAX_CLIENTS = 10;
-constexpr size_t MAX_REQUEST_SIZE = 4096;
 
 static inline void handleSocketFail() {
     std::cerr << "Fatal Error: Failed to register a socket, terminating program\n";
@@ -108,11 +107,22 @@ struct Request {
     }
 
     std::string readRequest(size_t charAmount) {
-        char* buffer = new char[charAmount];
+        char* buffer = new char[charAmount + 1];
         ssize_t readSize = read(client, buffer, charAmount - 1);
-        buffer[charAmount - 1] = 0;
+        buffer[charAmount] = 0;
         std::string result(buffer, readSize);
         delete[] buffer;
+        return result;
+    }
+
+    std::string readUntil(const std::string& delimeter) {
+        std::string result;
+        char buffer[4096];
+        while (result.find(delimeter) == std::string::npos) {
+            ssize_t readSize = read(client, buffer, sizeof(buffer));
+            if (readSize <= 0) break;
+            result.append(buffer, readSize);
+        }
         return result;
     }
 

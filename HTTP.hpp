@@ -287,8 +287,9 @@ struct DeleteRequest {
 };
 
 inline PotentialHeader<HTTPHeader::ContentType> parseContentType(const std::string& request) {
-    size_t typeStart = request.find("\r\nContent-Type: ") + 17;
-    if (typeStart - 17 == std::string::npos) return {};
+    size_t pos = request.find("\r\nContent-Type: ");
+    if (pos == std::string::npos) return {};
+    size_t typeStart = pos + 16;
     size_t typeEnd = request.find("\r\n", typeStart);
     std::string rawType(request.begin() + typeStart, request.begin() + typeEnd);
     if (rawType == "application/json") return HTTPContentType::ApplicationJson;
@@ -298,8 +299,9 @@ inline PotentialHeader<HTTPHeader::ContentType> parseContentType(const std::stri
 }
 
 inline PotentialHeader<HTTPHeader::ContentLength> parseContentLength(const std::string& request) {
-    size_t lenStart = request.find("\r\nContent-Length: ") + 19;
-    if (lenStart == std::string::npos) return {};
+    size_t pos = request.find("\r\nContent-Length: ");
+    if (pos == std::string::npos) return {};
+    size_t lenStart = pos + 18;
     size_t lenEnd = request.find("\r\n", lenStart);
     std::string rawLength(request.begin() + lenStart, request.begin() + lenEnd);
     return std::stoull(rawLength);
@@ -605,7 +607,15 @@ void handleMethodRequest(RequestObject<method> requestObject, Request& request) 
 }
 
 inline void handleRequest(Request& request) {
-    auto content = request.readRequest();
+    auto content = request.readUntil("\r\n\r\n");
+    auto contentLength = parseContentLength(content);
+    std::string body;
+    if (contentLength.has_value() && contentLength.value() > 0) {
+        size_t bodyRead = content.size() - (content.find("\r\n\r\n") + 4);
+        size_t bodyLeft = contentLength.value() - bodyRead;
+        body = request.readRequest(bodyLeft);
+    }
+    content += body;
     auto method = getMethod(content);
     switch (method) {
         case HTTPMethod::Get:
@@ -623,8 +633,10 @@ inline void handleRequest(Request& request) {
         case HTTPMethod::Delete:
             handleMethodRequest<HTTPMethod::Delete>(DeleteRequest(content), request);
             break;
-        default: closeServer();
-        exit(1);
+        default: {
+            closeServer();
+            exit(1);
+        }
     }
 }
 
