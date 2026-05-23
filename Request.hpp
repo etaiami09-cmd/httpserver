@@ -67,7 +67,7 @@ inline void initServer() {
         return;
     }
 
-    if (listen(sockfd, MAX_CLIENTS) < 1) {
+    if (listen(sockfd, MAX_CLIENTS) < 0) {
         failedListen();
         close(sockfd);
         return;
