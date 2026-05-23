@@ -11,7 +11,7 @@ The HTTP methods supported by this library are as follows:
 Each of these has its own associated ```RequestObject``` type:
 ```GetRequest```, ```PostRequest```, ```PutRequest```, ```PatchRequest```, and ```DeleteRequest```.
 They can be accessed using their names or more explicit template syntax. Example:
-```RequestObject<HTTPMethod::Get>``` is the defined as ```GetRequest```.
+```RequestObject<HTTPMethod::Get>``` is defined as ```GetRequest```.
 
 Each ```RequestObject``` has some shared fields:
 * ```params``` is an optional hash map containing any URL parameters
