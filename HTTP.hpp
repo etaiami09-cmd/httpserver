@@ -616,6 +616,7 @@ void handleMethodRequest(RequestObject<method> requestObject, Request& request) 
 
 inline void handleRequest(Request& request) {
     auto content = request.readUntil("\r\n\r\n");
+    if (content.empty()) return;
     auto contentLength = parseContentLength(content);
     std::string body;
     if (contentLength.has_value() && contentLength.value() > 0) {
