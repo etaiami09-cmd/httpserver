@@ -5,7 +5,7 @@ When ```initServer()``` is called, there are 4 potential failure points for the 
 * ```socket()``` can return an invalid socket fd
 * ```setsockopt()``` can fail
 * ```bind()``` can fail
-* ```listen``` can fail
+* ```listen()``` can fail
 
 By default, any of these failures will cause the library to print an error message and close the program with the ```EXIT_FAILURE``` status code.
 If a callback function is registered, the program will call that function instead, clean up whatever progress has been made, and return.
