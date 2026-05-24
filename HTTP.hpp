@@ -504,7 +504,7 @@ inline std::string loadFile(const std::string& path) {
 
 struct HTTPResponse {
     HTTPStatusCode code;
-    PotentialHeader<HTTPHeader::ConnectionClose> connectionClose = {};
+    PotentialHeader<HTTPHeader::ConnectionClose> connectionClose = nullptr;
     PotentialHeader<HTTPHeader::ContentType> contentType = {};
     std::vector<HeaderValueType<HTTPHeader::SetCookie>> cookies;
     ResponseBody body = {};
