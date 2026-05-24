@@ -14,6 +14,6 @@ auto response = HTTPResponse(HTTPStatus::Ok)
 ## Static methods for file loading
 JavaScript and HTML files can be easily converted to ```HTTPResponse``` objects using static methods:
 * ```HTTPResponse::renderHTML(const std::string& path)``` creates an ```HTTPResponse``` which can be sent to a client to render an HTML page
-* ```HTTPResposne::executeJSON(const std::string& path)``` creates an ```HTTPResponse``` which can be sent to a client to execute some JavaScript code
+* ```HTTPResponse::executeJSON(const std::string& path)``` creates an ```HTTPResponse``` which can be sent to a client to execute some JavaScript code
 
 Both of these cache the files used so they are only loaded from disk the first time they are required. Information about file caching and turning it off can be found in ```debugging.md```.
