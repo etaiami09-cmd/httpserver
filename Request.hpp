@@ -100,8 +100,17 @@ inline void setFailedListenHandler(FailedListenHandler listenHandler) {
 struct Request {
     int client;
 
+private:
+    Request(int clientFd) : client(clientFd) {}
+public:
+
     static Request get() {
-        return Request{.client=accept(sockfd, nullptr, nullptr)};
+        return Request{accept(sockfd, nullptr, nullptr)};
+    }
+
+    Request(Request&& other) {
+        client = other.client;
+        other.client = -1;
     }
 
     std::string readRequest() {
@@ -116,7 +125,7 @@ struct Request {
 
     std::string readRequest(size_t charAmount) {
         char* buffer = new char[charAmount + 1];
-        ssize_t readSize = read(client, buffer, charAmount - 1);
+        ssize_t readSize = read(client, buffer, charAmount);
         buffer[charAmount] = 0;
         std::string result(buffer, readSize);
         delete[] buffer;
