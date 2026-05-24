@@ -9,10 +9,10 @@
 #include <iostream>
 #include <functional>
 
-int sockfd;
+inline int sockfd;
 
-constexpr int PORT = 8080;
-constexpr int MAX_CLIENTS = 10;
+static inline int PORT = 8080;
+static inline int MAX_CLIENTS = 10;
 
 static inline void handleSocketFail() {
     std::cerr << "Fatal Error: Failed to register a socket, terminating program\n";
@@ -40,6 +40,14 @@ static inline FailedSocketHandler failedSocket = handleSocketFail;
 static inline FailedSetSockOptHandler failedSetSockOpt = handleFailedSetSockOpt;
 static inline FailedBindHandler failedBind = handleFailedBind;
 static inline FailedListenHandler failedListen = handleFailedListen;
+
+inline void setPort(int port) {
+    PORT = port;
+}
+
+inline void setMaxClients(int maxClients) {
+    MAX_CLIENTS = maxClients;
+}
 
 inline void initServer() {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -77,7 +85,7 @@ inline void setFailedSocketCallback(FailedSocketHandler socketHandler) {
     failedSocket = socketHandler;
 }
 
-inline void setFailedSetSockOptCallback(FailedSocketHandler setSockOptHandler) {
+inline void setFailedSetSockOptCallback(FailedSetSockOptHandler setSockOptHandler) {
     failedSetSockOpt = setSockOptHandler;
 }
 
