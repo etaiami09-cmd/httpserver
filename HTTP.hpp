@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <shared_mutex>
+#include <mutex>
 
 enum class HTTPMethod {
     Get,
@@ -491,16 +493,29 @@ inline size_t getBodySize(ResponseBody body) {
     return 0;
 }
 
-#ifndef HOT_RELOAD
-inline std::unordered_map<std::string, std::string> fileCache;
-#endif
-
 inline std::string loadFile(const std::string& path) {
     std::ifstream fileStream(path);
     std::stringstream buffStream;
     buffStream << fileStream.rdbuf();
     return buffStream.str();
 }
+
+#ifndef HOT_RELOAD
+inline std::unordered_map<std::string, std::string> fileCache;
+inline std::shared_mutex fileCacheMutex;
+
+static inline std::string getCachedFile(const std::string& path) {
+    {
+        std::shared_lock lock(fileCacheMutex);
+        if (fileCache.contains(path)) {
+            return fileCache[path];
+        }
+    }
+    std::unique_lock lock(fileCacheMutex);
+    fileCache[path] = loadFile(path);
+    return fileCache[path];
+}
+#endif
 
 struct HTTPResponse {
     HTTPStatusCode code;
@@ -551,12 +566,9 @@ struct HTTPResponse {
                 .addBody(loadFile(path))
                 .closeConnection();
         #else
-        if (!fileCache.contains(path)) {
-            fileCache[path] = loadFile(path);
-        }
         return HTTPResponse(HTTPStatusCode::Ok)
                 .addContentType(HTTPContentType::TextHtml)
-                .addBody(fileCache[path])
+                .addBody(getCachedFile(path))
                 .closeConnection();
         #endif
     }
@@ -568,12 +580,9 @@ struct HTTPResponse {
                 .addBody(loadFile(path))
                 .closeConnection();
         #else
-        if (!fileCache.contains(path)) {
-            fileCache[path] = loadFile(path);
-        }
         return HTTPResponse(HTTPStatusCode::Ok)
                 .addContentType(HTTPContentType::ApplicationJson)
-                .addBody(fileCache[path])
+                .addBody(getCachedFile(path))
                 .closeConnection();
         #endif
     }

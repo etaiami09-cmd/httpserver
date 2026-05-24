@@ -5,7 +5,7 @@ The ```HTTPResponse``` API uses a builder pattern to make code explicit and clea
 ```cpp
 auto cookie = ResponseCookie("password", "password123")
                     .addAge(CookieLength::Days(30));
-auto response = HTTPResponse(HTTPStatus::Ok)
+auto response = HTTPResponse(HTTPStatusCode::Ok)
                     .addContentType(HTTPContentType::ApplicationJson)
                     .addBody("console.log(\"Hello, World!\");")
                     .addCookie(cookie)
