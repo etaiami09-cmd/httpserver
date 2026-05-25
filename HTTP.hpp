@@ -110,7 +110,7 @@ inline void parsePath(ParameterList& params, std::string& path, const std::strin
 enum class HTTPHeader {
     ContentType,
     ContentLength,
-    ConnectionClose,
+    Connection,
     Host,
     Date,
     Cookie,
@@ -121,6 +121,11 @@ enum class HTTPContentType {
     ApplicationJson,
     TextHtml,
     TextPlain
+};
+
+enum class HTTPConnectionInstruction {
+    Close,
+    KeepAlive
 };
 
 template<>
@@ -159,7 +164,7 @@ struct std::formatter<HTTPHeader> {
         switch (p) {
             case (HTTPHeader::ContentType): return std::format_to(ctx.out(), "Content-Type");
             case (HTTPHeader::ContentLength): return std::format_to(ctx.out(), "Content-Length");
-            case (HTTPHeader::ConnectionClose): return std::format_to(ctx.out(), "Connection: close");
+            case (HTTPHeader::Connection): return std::format_to(ctx.out(), "Connection");
             case (HTTPHeader::Host): return std::format_to(ctx.out(), "Host");
             case (HTTPHeader::Date): return std::format_to(ctx.out(), "Date");
             case (HTTPHeader::Cookie): return std::format_to(ctx.out(), "Cookie");
@@ -219,7 +224,7 @@ struct ResponseCookie {
 template<HTTPHeader header>
 using HeaderValueType = std::conditional_t<header == HTTPHeader::ContentType, HTTPContentType,
                         std::conditional_t<header == HTTPHeader::ContentLength, size_t,
-                        std::conditional_t<header == HTTPHeader::ConnectionClose, std::nullptr_t,
+                        std::conditional_t<header == HTTPHeader::Connection, HTTPConnectionInstruction,
                         std::conditional_t<header == HTTPHeader::Host, std::string,
                         std::conditional_t<header == HTTPHeader::Date, std::string,
                         std::conditional_t<header == HTTPHeader::Cookie, std::unordered_map<std::string, std::string>,
@@ -259,6 +264,19 @@ inline PotentialHeader<HTTPHeader::Cookie> parseCookies(const std::string& reque
         cookies[key] = value;
     }
     return cookies;
+}
+
+inline HeaderValueType<HTTPHeader::Connection> parseConnection(const std::string& request) {
+    size_t end = request.find("\r\n\r\n");
+    std::string_view borderedRequest{request.begin(), request.begin() + end};
+    size_t start = borderedRequest.find("\r\nConnection: ");
+    if (start == std::string::npos) {
+        return HTTPConnectionInstruction::KeepAlive;
+    }
+    size_t valueStart = start + 14;
+    std::string_view view{borderedRequest.begin() + valueStart, borderedRequest.end()};
+    if (view.starts_with("close")) return HTTPConnectionInstruction::Close;
+    return HTTPConnectionInstruction::KeepAlive;
 }
 
 struct GetRequest {
@@ -428,7 +446,7 @@ inline constexpr std::string statusCodeString(HTTPStatusCode code) {
 using ResponseBody = std::optional<std::string>;
 
 template<>
-struct std::formatter<PotentialHeader<HTTPHeader::ConnectionClose>> {
+struct std::formatter<HTTPConnectionInstruction> {
     constexpr auto parse(std::format_parse_context& ctx) {
         auto it = ctx.begin();
         if (it != ctx.end() && *it != '}') {
@@ -437,11 +455,29 @@ struct std::formatter<PotentialHeader<HTTPHeader::ConnectionClose>> {
         return it;
     }
 
-    auto format(const PotentialHeader<HTTPHeader::ConnectionClose>& p, std::format_context& ctx) const {
-        if (p.has_value()) {
-            return std::format_to(ctx.out(), "Connection: close\r\n");
+    auto format(const HTTPConnectionInstruction& p, std::format_context& ctx) const {
+        if (p == HTTPConnectionInstruction::Close) {
+            return std::format_to(ctx.out(), "close");
         }
-        return std::format_to(ctx.out(), "");
+        return std::format_to(ctx.out(), "keep-alive");
+    }
+};
+
+template<>
+struct std::formatter<PotentialHeader<HTTPHeader::Connection>> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        auto it = ctx.begin();
+        if (it != ctx.end() && *it != '}') {
+            throw std::format_error("invalid format");
+        }
+        return it;
+    }
+
+    auto format(const PotentialHeader<HTTPHeader::Connection>& p, std::format_context& ctx) const {
+        if (p.has_value()) {
+            return std::format_to(ctx.out(), "Connection: {}\r\n", p.value());
+        }
+        return std::format_to(ctx.out(), "Connection: keep-alive\r\n");
     }
 };
 
@@ -519,19 +555,20 @@ static inline std::string getCachedFile(const std::string& path) {
 
 struct HTTPResponse {
     HTTPStatusCode code;
-    PotentialHeader<HTTPHeader::ConnectionClose> connectionClose = nullptr;
     PotentialHeader<HTTPHeader::ContentType> contentType = {};
+    PotentialHeader<HTTPHeader::Connection> connection;
     std::vector<HeaderValueType<HTTPHeader::SetCookie>> cookies;
     ResponseBody body = {};
 
     std::string parse() {
         return std::format(
                 "HTTP/1.1 {} {}\r\n"
-                    "{}\r\nContent-Length: {}\r\n{}{}\r\n{}",
+                    "Date: {}\r\nContent-Length: {}\r\n{}{}{}\r\n{}",
                     statusCodeNumber(code),
                     statusCodeString(code),
                     getHTTPDate(),
                     getBodySize(body),
+                    connection,
                     contentType,
                     cookies,
                     getRawBody(body));
@@ -540,7 +577,7 @@ struct HTTPResponse {
     HTTPResponse(HTTPStatusCode code) : code(code) {}
 
     HTTPResponse& closeConnection() {
-        connectionClose = {nullptr};
+        connection = HTTPConnectionInstruction::Close;
         return *this;
     }
 
@@ -603,49 +640,58 @@ void registerEndpoint(const std::string& path, RequestHandler<method> handler) {
 }
 
 template<HTTPMethod method>
-void handleMethodRequest(RequestObject<method> requestObject, Request& request) {
+bool handleMethodRequest(RequestObject<method> requestObject, Request& request, HeaderValueType<HTTPHeader::Connection> connection) {
     if (endpointMap<method>.contains(requestObject.path)) {
-        request.respond(endpointMap<method>[requestObject.path](requestObject).parse());
+        auto response = endpointMap<method>[requestObject.path](requestObject);
+        if (connection == HTTPConnectionInstruction::Close) {
+            response.connection = HTTPConnectionInstruction::Close;
+        }
+        request.respond(response.parse());
+        return response.connection.has_value() && response.connection.value() == HTTPConnectionInstruction::Close;
     }
     else {
         HTTPResponse response(HTTPStatusCode::NotFound);
         response.closeConnection();
         request.respond(response.parse());
+        return true;
     }
 }
 
 inline void handleRequest(Request& request) {
     auto content = request.readUntil("\r\n\r\n");
     if (content.empty()) return;
+    auto connection = parseConnection(content);
     auto contentLength = parseContentLength(content);
     std::string body;
     if (contentLength.has_value() && contentLength.value() > 0) {
-        size_t bodyRead = content.size() - (content.find("\r\n\r\n") + 4);
-        size_t bodyLeft = contentLength.value() - bodyRead;
-        body = request.readRequest(bodyLeft);
+        body = request.readRequest(contentLength.value());
     }
     content += body;
     auto method = getMethod(content);
+    bool shouldCloseConnection;
     switch (method) {
         case HTTPMethod::Get:
-            handleMethodRequest<HTTPMethod::Get>(GetRequest(content), request);
+            shouldCloseConnection = handleMethodRequest<HTTPMethod::Get>(GetRequest(content), request, connection);
             break;
         case HTTPMethod::Post:
-            handleMethodRequest<HTTPMethod::Post>(PostRequest(content), request);
+            shouldCloseConnection = handleMethodRequest<HTTPMethod::Post>(PostRequest(content), request, connection);
             break;
         case HTTPMethod::Put:
-            handleMethodRequest<HTTPMethod::Put>(PutRequest(content), request);
+            shouldCloseConnection = handleMethodRequest<HTTPMethod::Put>(PutRequest(content), request, connection);
             break;
         case HTTPMethod::Patch:
-            handleMethodRequest<HTTPMethod::Patch>(PatchRequest(content), request);
+            shouldCloseConnection = handleMethodRequest<HTTPMethod::Patch>(PatchRequest(content), request, connection);
             break;
         case HTTPMethod::Delete:
-            handleMethodRequest<HTTPMethod::Delete>(DeleteRequest(content), request);
+            shouldCloseConnection = handleMethodRequest<HTTPMethod::Delete>(DeleteRequest(content), request, connection);
             break;
         default: {
             closeServer();
             exit(1);
         }
+    }
+    if (connection != HTTPConnectionInstruction::Close && !shouldCloseConnection) {
+        Request::feedBackRequest(request);
     }
 }
 

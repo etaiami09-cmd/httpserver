@@ -8,6 +8,8 @@
 #include <string>
 #include <iostream>
 #include <functional>
+#include <vector>
+#include <algorithm>
 
 inline int sockfd;
 
@@ -99,18 +101,52 @@ inline void setFailedListenHandler(FailedListenHandler listenHandler) {
 
 struct Request {
     int client;
+    std::string waiting;
 
 private:
     Request(int clientFd) : client(clientFd) {}
 public:
 
+    static std::vector<Request>& getPending() {
+        static std::vector<Request> pending;
+        return pending;
+    }
+
     static Request get() {
+        auto& pending = getPending();
+        pending.erase(
+            std::remove_if(pending.begin(), pending.end(), [](Request& request) {
+                char buffer;
+                return recv(request.client, &buffer, 1, MSG_PEEK | MSG_DONTWAIT) == 0;
+            }),
+        pending.end()
+        );
+        if (!pending.empty()) {
+            auto request = std::move(pending[pending.size() - 1]);
+            pending.pop_back();
+            return request;
+        }
         return Request{accept(sockfd, nullptr, nullptr)};
+    }
+
+    static void feedBackRequest(Request& request) {
+        getPending().push_back(std::move(request));
     }
 
     Request(Request&& other) {
         client = other.client;
+        waiting = std::move(other.waiting);
         other.client = -1;
+    }
+
+    Request& operator=(Request&& other) {
+        if (this != &other) {
+            close(client);
+            client = other.client;
+            waiting = std::move(other.waiting);
+            other.client = -1;
+        }
+        return *this;
     }
 
     std::string readRequest() {
@@ -118,33 +154,51 @@ public:
         ioctl(client, FIONREAD, &requestSize);
         char* buffer = new char[requestSize];
         ssize_t readSize = read(client, buffer, requestSize - 1);
-        std::string result(buffer, readSize);
+        std::string result = waiting + std::string(buffer, readSize);
         delete[] buffer;
+        waiting.clear();
         return result;
     }
 
     std::string readRequest(size_t charAmount) {
-        char* buffer = new char[charAmount + 1];
-        ssize_t readSize = read(client, buffer, charAmount);
-        buffer[charAmount] = 0;
-        std::string result(buffer, readSize);
+        if (waiting.size() >= charAmount) {
+            std::string result{waiting.begin(), waiting.begin() + charAmount};
+            waiting = waiting.substr(charAmount);
+            return result;
+        }
+        char* buffer = new char[charAmount - waiting.size()];
+        ssize_t readSize = read(client, buffer, charAmount - waiting.size());
+        std::string result = waiting + std::string(buffer, readSize);
+        waiting.clear();
         delete[] buffer;
         return result;
     }
 
     std::string readUntil(const std::string& delimeter) {
-        std::string result;
-        char buffer[4096];
+        auto waitingDelim = waiting.find(delimeter);
+        if (waitingDelim != std::string::npos) {
+            std::string result = waiting.substr(0, waitingDelim + delimeter.size());
+            waiting = waiting.substr(waitingDelim + delimeter.size());
+            return result;
+        }
+        std::string result = std::move(waiting);
+        char buffer[1024];
         while (result.find(delimeter) == std::string::npos) {
             ssize_t readSize = read(client, buffer, sizeof(buffer));
-            if (readSize <= 0) break;
+            if (readSize <= 0) return result;
             result.append(buffer, readSize);
         }
-        return result;
+        auto pos = result.find(delimeter);
+        waiting = result.substr(pos + delimeter.size());
+        return result.substr(0, pos + delimeter.size());
+    }
+
+    void unread(const std::string& requestRemainder) {
+        waiting = requestRemainder + waiting;
     }
 
     void respond(const std::string& message) {
-        write(client, message.c_str(), message.size());
+        std::ignore = write(client, message.c_str(), message.size());
     }
 
     ~Request() {close(client);}
