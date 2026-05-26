@@ -686,8 +686,11 @@ inline void handleRequest(Request& request) {
             shouldCloseConnection = handleMethodRequest<HTTPMethod::Delete>(DeleteRequest(content), request, connection);
             break;
         default: {
-            closeServer();
-            exit(1);
+            request.respond(
+                HTTPResponse(HTTPStatusCode::BadRequest)
+                .closeConnection()
+                .parse()
+            );
         }
     }
     if (connection != HTTPConnectionInstruction::Close && !shouldCloseConnection) {
